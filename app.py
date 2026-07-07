@@ -48,6 +48,13 @@ def index():
 def api_scan():
     """Escaneia as pastas mensais e retorna um resumo."""
     base_path = request.args.get("path", DEFAULT_BASE_PATH)
+    
+    # Fallback para Vercel ou se o G:\ não existir
+    if not os.path.exists(base_path):
+        local_dataset = os.path.join(PROJECT_DIR, "DATASET")
+        if os.path.exists(local_dataset):
+            base_path = local_dataset
+
     try:
         folders = scan_folders(base_path)
         months = []
@@ -59,7 +66,28 @@ def api_scan():
             })
         return jsonify({"months": months, "base_path": base_path})
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        # Tentar extrair do banco de dados como último recurso
+        try:
+            docs = get_documents(DB_PATH)
+            unique_months = {}
+            for doc in docs:
+                if doc["month_num"] not in unique_months:
+                    unique_months[doc["month_num"]] = {
+                        "name": doc["month"],
+                        "count": 0
+                    }
+                unique_months[doc["month_num"]]["count"] += 1
+            
+            months = []
+            for m_num in sorted(unique_months.keys()):
+                months.append({
+                    "month_num": m_num,
+                    "name": unique_months[m_num]["name"],
+                    "total_files": unique_months[m_num]["count"]
+                })
+            return jsonify({"months": months, "base_path": "database_fallback"})
+        except Exception:
+            return jsonify({"error": str(e)}), 400
 
 
 # ─── API: Processar documentos com IA (SSE) ────────────────
