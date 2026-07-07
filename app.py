@@ -296,10 +296,19 @@ def api_export():
                 "motivo": doc.get("observation", "Dados não encontrados"),
             })
 
-    output_path = os.path.join(PROJECT_DIR, "despesas_carne_leao_2024.xlsx")
-    export_to_excel(successful, pending, output_path)
-    return send_file(output_path, as_attachment=True,
-                     download_name="despesas_carne_leao_2024.xlsx")
+    try:
+        output = io.BytesIO()
+        export_to_excel(successful, pending, output)
+        output.seek(0)
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name="despesas_carne_leao_2024.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ─── API: Preview do documento ─────────────────────────────
