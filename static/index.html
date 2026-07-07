@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carnê-Leão 2024 — Consolidação de Despesas</title>
+    <meta name="description" content="Ferramenta de consolidação de despesas mensais para IRPF Carnê-Leão com extração por IA">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+    <!-- ═══ HEADER ═══ -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">
+                <span class="logo-icon">🦁</span>
+                <div>
+                    <h1>Carnê-Leão <span class="accent">2024</span></h1>
+                    <p class="subtitle">Consolidação Inteligente de Despesas</p>
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="api-key-group">
+                <label for="apiKey">🔑 OpenAI API Key</label>
+                <input type="password" id="apiKey" placeholder="Cole sua chave aqui…" autocomplete="off">
+            </div>
+            <button id="btnProcess" class="btn btn-primary" title="Processar documentos com IA">
+                <span class="btn-icon">⚡</span> Processar
+            </button>
+            <button id="btnExport" class="btn btn-accent" title="Exportar planilha Excel">
+                <span class="btn-icon">📥</span> Exportar Excel
+            </button>
+        </div>
+    </header>
+
+    <!-- ═══ STATS BAR ═══ -->
+    <div class="stats-bar">
+        <div class="stat-card">
+            <span class="stat-value" id="statTotal">—</span>
+            <span class="stat-label">Total</span>
+        </div>
+        <div class="stat-card card-ok">
+            <span class="stat-value" id="statOk">—</span>
+            <span class="stat-label">Extraídos</span>
+        </div>
+        <div class="stat-card card-review">
+            <span class="stat-value" id="statReview">—</span>
+            <span class="stat-label">Revisão</span>
+        </div>
+        <div class="stat-card card-error">
+            <span class="stat-value" id="statError">—</span>
+            <span class="stat-label">Falha</span>
+        </div>
+        <div class="stat-card card-pending">
+            <span class="stat-value" id="statPending">—</span>
+            <span class="stat-label">Pendentes</span>
+        </div>
+    </div>
+
+    <!-- ═══ MAIN LAYOUT ═══ -->
+    <main class="main-layout">
+
+        <!-- SIDEBAR: Meses -->
+        <aside class="sidebar" id="sidebar">
+            <h3 class="sidebar-title">📅 Meses</h3>
+            <button class="month-card active" data-month="all" id="btnAllMonths">
+                <span class="month-dot dot-all"></span>
+                <span class="month-name">Todos</span>
+                <span class="month-count" id="countAll">—</span>
+            </button>
+            <div id="monthCards"></div>
+        </aside>
+
+        <!-- CONTENT: Tabela -->
+        <section class="content">
+            <div class="toolbar">
+                <div class="toolbar-left">
+                    <select id="filterStatus" class="select-filter">
+                        <option value="all">Todos os Status</option>
+                        <option value="ok">✅ Extraídos</option>
+                        <option value="review">⚠️ Revisão</option>
+                        <option value="error">❌ Falha</option>
+                        <option value="pending">⏳ Pendentes</option>
+                    </select>
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="searchInput" placeholder="Buscar arquivo…">
+                    </div>
+                </div>
+                <span class="result-count" id="resultCount"></span>
+            </div>
+
+            <div class="table-wrapper">
+                <table id="documentsTable">
+                    <thead>
+                        <tr>
+                            <th>Mês</th>
+                            <th>Arquivo</th>
+                            <th>Data Pagamento</th>
+                            <th>Valor (R$)</th>
+                            <th>Confiança</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="documentsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Empty state -->
+            <div id="emptyState" class="empty-state">
+                <div class="empty-icon">📄</div>
+                <h3>Nenhum documento processado</h3>
+                <p>Cole sua <strong>chave de API da OpenAI</strong> acima e clique em <strong>"Processar"</strong> para iniciar a extração inteligente dos documentos.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- ═══ DRILL DOWN TEMPLATE ═══ -->
+    <template id="drillDownTemplate">
+        <tr class="drill-down-row">
+            <td colspan="7">
+                <div class="drill-down-container">
+                    <div class="preview-image-wrapper">
+                        <img class="previewImg" src="" alt="Preview do documento">
+                        <div class="previewLoading preview-loading">Carregando preview…</div>
+                    </div>
+                    <div class="preview-form">
+                        <div class="form-header">
+                            <h3 class="previewTitle">Detalhes</h3>
+                            <button class="btnClosePreview btn-icon-close" title="Fechar">✕</button>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label>📅 Data Pagamento</label>
+                                <input type="text" class="editDate" placeholder="DD/MM/YYYY">
+                            </div>
+                            <div class="form-field">
+                                <label>💰 Valor Despesa</label>
+                                <input type="text" class="editValue" placeholder="0.00">
+                            </div>
+                            <div class="form-field full-width">
+                                <label>📝 Descrição</label>
+                                <input type="text" class="editDescription" disabled>
+                            </div>
+                            <div class="form-field">
+                                <label>📋 Tipo Doc.</label>
+                                <span class="editType field-readonly"></span>
+                            </div>
+                            <div class="form-field">
+                                <label>🎯 Confiança</label>
+                                <span class="editConfidence field-readonly"></span>
+                            </div>
+                        </div>
+                        <button class="btnSaveEdit btn btn-primary btn-full">
+                            💾 Salvar Alterações
+                        </button>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    </template>
+
+    <!-- ═══ PROCESSING MODAL ═══ -->
+    <div id="processModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚡ Processando com OpenAI</h2>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <div class="progress-info">
+                    <span id="progressText">Preparando…</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+            </div>
+            <p id="progressFile" class="progress-file"></p>
+            <div id="progressLog" class="progress-log"></div>
+        </div>
+    </div>
+
+    <!-- ═══ FULLSCREEN IMAGE MODAL ═══ -->
+    <div id="fullscreenModal" class="fullscreen-modal">
+        <button class="btn-icon-close btn-close-fullscreen" id="btnCloseFullscreen" title="Fechar">✕</button>
+        <img id="fullscreenImg" src="" alt="Documento em tela cheia">
+    </div>
+
+    <!-- ═══ OVERLAY ═══ -->
+    <div id="overlay" class="overlay"></div>
+
+    <!-- ═══ TOAST CONTAINER ═══ -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
