@@ -251,9 +251,16 @@ def api_stats():
 
 # ─── API: Exportar Excel ───────────────────────────────────
 
-@app.route("/api/export")
+@app.route("/api/export", methods=["GET", "POST"])
 def api_export():
-    docs = get_documents(DB_PATH)
+    if request.method == "POST":
+        data = request.get_json()
+        if data and "documents" in data:
+            docs = data["documents"]
+        else:
+            docs = get_documents(DB_PATH)
+    else:
+        docs = get_documents(DB_PATH)
     successful = []
     pending = []
 
