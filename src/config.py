@@ -8,8 +8,7 @@ import os
 # Caminho base das pastas mensais no Google Drive
 # ──────────────────────────────────────────────
 DEFAULT_BASE_PATH = (
-    r"G:\Drives compartilhados\João\IRPF - 2026"
-    r"\GRUPO - IOVSF - rfb\JOAO YURE"
+    r"C:\Users\User\Projetos\CARNE-LEAO-DADOS"
     r"\CARNE LEÃO DR. YURE 2024"
 )
 
