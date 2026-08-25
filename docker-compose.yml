@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  carne-leao:
+    build: .
+    image: carne-leao:latest
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_SERVICE_ACCOUNT_JSON=${GOOGLE_SERVICE_ACCOUNT_JSON}
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
+      - CRM_JWT_SECRET=${CRM_JWT_SECRET}
+      - DB_PATH=/app/data/data.db
+    volumes:
+      - carne_leao_data:/app/data
+
+volumes:
+  carne_leao_data:

@@ -5,3 +5,8 @@ openpyxl
 pymupdf==1.25.3
 flask==3.1.3
 openai==1.65.2
+google-api-python-client
+google-auth
+gunicorn
+PyJWT
+flask-cors

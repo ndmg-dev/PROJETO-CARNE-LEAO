@@ -18,7 +18,10 @@ from flask import (
     Flask, request, jsonify, Response, send_file, send_from_directory
 )
 
-from src.config import DEFAULT_BASE_PATH, OPENAI_API_KEY, OPENAI_MODEL, DB_PATH
+from src.config import (
+    DEFAULT_BASE_PATH, OPENAI_API_KEY, OPENAI_MODEL, DB_PATH,
+    USE_GOOGLE_DRIVE, CRM_JWT_SECRET,
+)
 from src.scanner import scan_folders
 from src.parser import extract_description
 from src.database import (
@@ -34,6 +37,51 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 
+# CORS habilitado apenas em /api/* para permitir chamadas do frontend do CRM
+# a partir de outra origem (Bearer JWT, sem cookies de sessão envolvidos).
+_CORS_ALLOWED_ORIGINS = [
+    "https://crmmg.mendoncagalvao.com.br",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+]
+
+try:
+    from flask_cors import CORS
+    CORS(app, resources={r"/api/*": {"origins": _CORS_ALLOWED_ORIGINS}},
+         methods=["GET", "POST", "PUT", "DELETE"],
+         allow_headers=["Authorization", "Content-Type"])
+except ImportError:
+    pass
+
+
+# ─── Autenticação Bearer JWT (opcional, CRM_MG SSO) ─────────
+# Se CRM_JWT_SECRET não estiver configurado, a checagem é desabilitada
+# (comportamento padrão de desenvolvimento local, sem auth).
+
+@app.before_request
+def _require_crm_jwt():
+    if not CRM_JWT_SECRET:
+        return  # auth desabilitada (dev local)
+
+    if not request.path.startswith("/api/"):
+        return  # apenas /api/* exige token
+
+    import jwt as pyjwt
+
+    auth_header = request.headers.get("Authorization", "")
+    parts = auth_header.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
+        return jsonify({"error": "Token de autenticação ausente."}), 401
+
+    token = parts[1].strip()
+    try:
+        pyjwt.decode(token, CRM_JWT_SECRET, algorithms=["HS256"])
+    except pyjwt.ExpiredSignatureError:
+        return jsonify({"error": "Token expirado."}), 401
+    except pyjwt.InvalidTokenError:
+        return jsonify({"error": "Token inválido."}), 401
+
 
 # ─── Páginas ────────────────────────────────────────────────
 
@@ -48,12 +96,13 @@ def index():
 def api_scan():
     """Escaneia as pastas mensais e retorna um resumo."""
     base_path = request.args.get("path", DEFAULT_BASE_PATH)
-    
-    # Fallback para Vercel ou se o G:\ não existir
-    if not os.path.exists(base_path):
-        local_dataset = os.path.join(PROJECT_DIR, "DATASET")
-        if os.path.exists(local_dataset):
-            base_path = local_dataset
+
+    if not USE_GOOGLE_DRIVE:
+        # Fallback para Vercel ou se o G:\ não existir (apenas modo local)
+        if not os.path.exists(base_path):
+            local_dataset = os.path.join(PROJECT_DIR, "DATASET")
+            if os.path.exists(local_dataset):
+                base_path = local_dataset
 
     try:
         folders = scan_folders(base_path)
@@ -117,8 +166,13 @@ def api_process():
         yield _sse({"type": "start", "total": total})
 
         for month_num, info in folders.items():
-            for filepath in info["files"]:
-                filename = os.path.basename(filepath)
+            for file_entry in info["files"]:
+                file_ref = file_entry["id"]
+                filename = file_entry["name"]
+                # Em modo local, "id" é o caminho completo no filesystem;
+                # em modo Drive, é o ID do arquivo — usado como chave de
+                # deduplicação no banco em ambos os casos.
+                filepath = file_ref
                 description = extract_description(filename)
                 processed += 1
 
@@ -147,7 +201,7 @@ def api_process():
                 result = None
                 max_retries = 2
                 for attempt in range(max_retries):
-                    result = extract_with_ai(filepath, api_key, OPENAI_MODEL)
+                    result = extract_with_ai(file_ref, filename, api_key, OPENAI_MODEL)
 
                     # Se der erro, esperar um pouco e tentar de novo
                     if result.get("error"):
@@ -327,10 +381,41 @@ def api_preview(doc_id):
     if not doc:
         return jsonify({"error": "Documento não encontrado"}), 404
 
-    # No Windows/Local ele usa o filepath original do Drive (G:\)
     filepath = doc["filepath"]
-    
-    # Se estiver rodando na Vercel (Linux) ou não encontrar no G:\, 
+    ext = os.path.splitext(doc["filename"])[1].lower()
+
+    if USE_GOOGLE_DRIVE:
+        # Em modo Drive, "filepath" guarda o ID do arquivo no Drive.
+        from src.drive_client import get_drive_service, download_file
+        try:
+            service = get_drive_service()
+            buf = download_file(service, filepath)
+        except Exception as e:
+            return jsonify({"error": f"Falha ao baixar do Google Drive: {e}"}), 500
+
+        if ext in {".jpg", ".jpeg", ".png"}:
+            return send_file(buf, mimetype="image/jpeg" if ext != ".png" else "image/png")
+
+        elif ext == ".pdf":
+            import fitz
+            try:
+                pdf_doc = fitz.open(stream=buf.getvalue(), filetype="pdf")
+                page = pdf_doc[0]
+                pix = page.get_pixmap(dpi=150)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                pdf_doc.close()
+
+                out_buf = io.BytesIO()
+                img.save(out_buf, format="PNG")
+                out_buf.seek(0)
+                return send_file(out_buf, mimetype="image/png")
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+
+        return jsonify({"error": "Tipo de arquivo não suportado para preview"}), 400
+
+    # Modo local (fallback de desenvolvimento)
+    # Se estiver rodando na Vercel (Linux) ou não encontrar no G:\,
     # tenta buscar na pasta "DATASET" local do projeto.
     if not os.path.exists(filepath):
         local_dataset = os.path.join(PROJECT_DIR, "DATASET", doc["month"], doc["filename"])
@@ -338,8 +423,6 @@ def api_preview(doc_id):
             filepath = local_dataset
         else:
             return jsonify({"error": "Arquivo não encontrado"}), 404
-
-    ext = os.path.splitext(filepath)[1].lower()
 
     if ext in {".jpg", ".jpeg", ".png"}:
         return send_file(filepath)
@@ -386,9 +469,11 @@ from PIL import Image
 
 
 # ─── Inicialização ─────────────────────────────────────────
+# Executado tanto via `python app.py` (dev) quanto via `gunicorn app:app`
+# (produção), garantindo que o schema exista antes do primeiro request.
+init_db(DB_PATH)
 
 if __name__ == "__main__":
-    init_db(DB_PATH)
     print("\n" + "=" * 60)
     print("  Carne-Leao 2024 - Interface Web")
     print("  Abra no navegador: http://localhost:5000")
