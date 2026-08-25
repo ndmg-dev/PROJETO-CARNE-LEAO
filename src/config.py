@@ -29,10 +29,22 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = "gpt-4o-mini"
 
 # ──────────────────────────────────────────────
+# Google Drive API (produção/Docker — substitui o scan de filesystem local)
+# ──────────────────────────────────────────────
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+GOOGLE_DRIVE_FOLDER_ID = os.environ.get("GOOGLE_DRIVE_FOLDER_ID", "")
+USE_GOOGLE_DRIVE = bool(GOOGLE_SERVICE_ACCOUNT_JSON and GOOGLE_DRIVE_FOLDER_ID)
+
+# ──────────────────────────────────────────────
+# CRM JWT (Bearer auth opcional para /api/*)
+# ──────────────────────────────────────────────
+CRM_JWT_SECRET = os.environ.get("CRM_JWT_SECRET", "")
+
+# ──────────────────────────────────────────────
 # Banco de dados SQLite (cache local)
 # ──────────────────────────────────────────────
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(PROJECT_DIR, "data.db")
+DB_PATH = os.environ.get("DB_PATH", os.path.join(PROJECT_DIR, "data.db"))
 
 # ──────────────────────────────────────────────
 # Padrões de Regex legados (fallback do parser)
